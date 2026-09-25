@@ -13,6 +13,9 @@
 #elif defined(RG_STORAGE_SDMMC_HOST)
 #include <driver/sdmmc_host.h>
 #define SDCARD_DO_TRANSACTION sdmmc_host_do_transaction
+#if defined(RG_STORAGE_SD_PWR_LDO_CHAN)
+#include <sd_pwr_ctrl_by_on_chip_ldo.h>
+#endif
 #endif
 
 #ifdef ESP_PLATFORM
@@ -125,6 +128,18 @@ void rg_storage_init(void)
     host_config.slot = RG_STORAGE_SDMMC_HOST;
     host_config.max_freq_khz = RG_STORAGE_SDMMC_SPEED;
     host_config.do_transaction = &sdcard_do_transaction;
+
+#if defined(RG_STORAGE_SD_PWR_LDO_CHAN)
+    // 有些板子(如 ESP32-P4)的 SD VDD 由片内 LDO 供给, 必须先建好供电控制句柄交给
+    // host, 否则卡完全没电, ACMD41 协商直接超时(ESP_ERR_TIMEOUT / 0x107)。
+    sd_pwr_ctrl_ldo_config_t pwr_ldo_config = {.ldo_chan_id = RG_STORAGE_SD_PWR_LDO_CHAN};
+    sd_pwr_ctrl_handle_t pwr_ctrl_handle = NULL;
+    esp_err_t pwr_err = sd_pwr_ctrl_new_on_chip_ldo(&pwr_ldo_config, &pwr_ctrl_handle);
+    if (pwr_err == ESP_OK)
+        host_config.pwr_ctrl_handle = pwr_ctrl_handle;
+    else
+        RG_LOGE("SD power: on-chip LDO channel %d failed (0x%x)", RG_STORAGE_SD_PWR_LDO_CHAN, pwr_err);
+#endif
 
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.width = 1;

@@ -222,6 +222,13 @@ void webui_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
 
+#ifdef RG_HTTPD_STACK_SIZE
+    // IDF hardcodes 4096 in HTTPD_DEFAULT_CONFIG() and exposes no Kconfig for it, which
+    // is not enough for http_api_handler: it holds a 1KB local buffer and ends up in
+    // newlib's _dtoa_r via cJSON_Print. See RG_HTTPD_STACK_SIZE in the target config.h.
+    config.stack_size = RG_HTTPD_STACK_SIZE;
+#endif
+
     esp_err_t err = httpd_start(&server, &config);
     if (err != ESP_OK)
     {

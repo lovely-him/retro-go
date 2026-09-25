@@ -300,6 +300,32 @@ bool rg_network_init(void)
     int slot = rg_settings_get_number(NS_WIFI, SETTING_WIFI_SLOT, 0);
     rg_network_wifi_read_config(slot, &wifi_config);
 
+#ifdef RG_WIFI_DEFAULT_SSID
+    // Target-provided preset network, so the device can join Wi-Fi without anyone having
+    // to type an SSID into the menu first. This only ever runs while the selected slot is
+    // still empty: as soon as the user saves any network (or edits this one) from
+    // Wi-Fi options -> Manage networks, the preset stops touching the config for good.
+    // SETTING_WIFI_ENABLE has to be set as well, because the auto-start below defaults to
+    // false -- without it the preset would be saved and then never used.
+    // Note that rg_settings is backed by JSON files on the SD card rather than NVS, so the
+    // setters only mutate the in-memory cJSON tree; commit() is what persists them.
+    if (!wifi_config.ssid[0])
+    {
+        rg_wifi_config_t preset = {0};
+        strncpy(preset.ssid, RG_WIFI_DEFAULT_SSID, sizeof(preset.ssid) - 1);
+#ifdef RG_WIFI_DEFAULT_PASSWORD
+        strncpy(preset.password, RG_WIFI_DEFAULT_PASSWORD, sizeof(preset.password) - 1);
+#endif
+        if (rg_network_wifi_write_config(slot, &preset))
+        {
+            wifi_config = preset;
+            rg_settings_set_boolean(NS_WIFI, SETTING_WIFI_ENABLE, true);
+            rg_settings_commit();
+            RG_LOGI("Saved the preset Wi-Fi network '%s' to slot %d", preset.ssid, slot);
+        }
+    }
+#endif
+
     // Auto-start?
     if (rg_settings_get_boolean(NS_WIFI, SETTING_WIFI_ENABLE, false))
         rg_network_wifi_start();

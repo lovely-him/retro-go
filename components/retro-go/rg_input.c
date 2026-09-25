@@ -35,6 +35,17 @@ static rg_keymap_kbd_t keymap_kbd[] = RG_GAMEPAD_KBD_MAP;
 #ifdef RG_GAMEPAD_SERIAL_MAP
 static rg_keymap_serial_t keymap_serial[] = RG_GAMEPAD_SERIAL_MAP;
 #endif
+#ifdef RG_TOUCH_DRIVER_GT911
+#include "drivers/input/gt911.h"
+#endif
+#ifdef RG_GAMEPAD_TOUCH_MAP
+#include "drivers/input/touch_buttons.h"
+static rg_keymap_touch_t keymap_touch[] = RG_GAMEPAD_TOUCH_MAP;
+#endif
+#ifdef RG_GAMEPAD_USB_MAP
+#include "drivers/input/usb_hid.h"
+static rg_keymap_usb_t keymap_usb[] = RG_GAMEPAD_USB_MAP;
+#endif
 #ifdef RG_GAMEPAD_VIRT_MAP
 static rg_keymap_virt_t keymap_virt[] = RG_GAMEPAD_VIRT_MAP;
 #endif
@@ -199,6 +210,23 @@ bool rg_input_read_gamepad_raw(uint32_t *out)
     }
 #endif
 
+#if defined(RG_GAMEPAD_TOUCH_MAP)
+    state |= rg_touch_buttons_read();
+#endif
+
+#if defined(RG_GAMEPAD_USB_MAP)
+    rg_usb_report_t usb_report;
+    if (rg_usb_hid_read(&usb_report))
+    {
+        for (size_t i = 0; i < RG_COUNT(keymap_usb); ++i)
+        {
+            const rg_keymap_usb_t *mapping = &keymap_usb[i];
+            if (rg_usb_hid_key_hit(&usb_report, mapping->modifier, mapping->usage))
+                state |= mapping->key;
+        }
+    }
+#endif
+
 #if defined(RG_GAMEPAD_VIRT_MAP)
     for (size_t i = 0; i < RG_COUNT(keymap_virt); ++i)
     {
@@ -334,6 +362,22 @@ void rg_input_init(void)
     UPDATE_GLOBAL_MAP(keymap_serial);
 #endif
 
+#ifdef RG_TOUCH_DRIVER_GT911
+    RG_LOGI("Initializing GT911 touch driver...");
+    rg_gt911_init();
+#endif
+
+#if defined(RG_GAMEPAD_TOUCH_MAP)
+    rg_touch_buttons_init(keymap_touch, RG_COUNT(keymap_touch));
+    UPDATE_GLOBAL_MAP(keymap_touch);
+#endif
+
+#if defined(RG_GAMEPAD_USB_MAP)
+    RG_LOGI("Initializing USB HID gamepad driver...");
+    rg_usb_hid_init();
+    UPDATE_GLOBAL_MAP(keymap_usb);
+#endif
+
 
 #if RG_BATTERY_DRIVER == 1 /* ADC */
     RG_LOGI("Initializing ADC battery driver...");
@@ -358,7 +402,17 @@ void rg_input_init(void)
     rg_input_read_gamepad_raw(NULL);
 
     // Start background polling
-    rg_task_create("rg_input", &input_task, NULL, 3 * 1024, RG_TASK_PRIORITY_6, 1);
+#ifdef RG_TOUCH_DRIVER_GT911
+    // 触摸轮询让这个任务第一次走进 I2C 调用链, 而 I2C 出错时 gt911.c 会在这里打日志:
+    // rg_system_vlog() 自带 char buffer[300], 叠加 newlib vsnprintf 的内部开销, 一条
+    // RG_LOG 约 800 字节, 再加 i2c_master 的调用深度, 原来的 3KB 不够 —— 与
+    // drivers/input/usb_hid.c 把 USB 任务从 4KB 提到 5KB 是同一个原因。
+    // 用条件编译保证不用触摸的 target 逐字节不变。
+    const size_t input_task_stack = 4 * 1024;
+#else
+    const size_t input_task_stack = 3 * 1024;
+#endif
+    rg_task_create("rg_input", &input_task, NULL, input_task_stack, RG_TASK_PRIORITY_6, 1);
     while (gamepad_state == -1)
         rg_task_yield();
     RG_LOGI("Input ready. state=" PRINTF_BINARY_16 "\n", PRINTF_BINVAL_16(gamepad_state));

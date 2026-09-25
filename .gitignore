@@ -3,6 +3,7 @@ __pycache__/
 .cache/
 .vscode/
 build/
+.venv/
 
 # ESP32 build
 /partitions.bin
@@ -14,6 +15,8 @@ build/
 /*.fw
 /*.img
 /*.zip
+managed_components
+dependencies.lock
 
 # SDL2 build
 /sd

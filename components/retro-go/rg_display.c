@@ -6,12 +6,19 @@
 
 #define LCD_BUFFER_LENGTH (RG_SCREEN_WIDTH * 4) // In pixels
 
+// rg_task_msg_t 的 type 字段注明"负值为保留", 目前只有 RG_TASK_MSG_STOP 用了 -1。
+// -2 表示"只重合成覆盖层, 不携带画面数据"。定义在这里而不是 rg_system.h, 因为只有
+// 本文件的 display_task 会消费它。
+#define RG_DISPLAY_MSG_OVERLAY (-2)
+
 // static rg_display_driver_t driver;
 static rg_task_t *display_task_queue;
 static rg_display_counters_t counters;
 static rg_display_config_t config;
 static rg_surface_t *border;
 static rg_display_t display;
+static rg_display_overlay_fn_t overlay_draw;    // 见 rg_display.h 里 rg_display_set_overlay 的说明
+static rg_display_overlay_hit_fn_t overlay_hits;
 static int16_t map_viewport_to_source_x[RG_SCREEN_WIDTH + 1];
 static int16_t map_viewport_to_source_y[RG_SCREEN_HEIGHT + 1];
 static uint32_t screen_line_checksum[RG_SCREEN_HEIGHT + 1];
@@ -38,6 +45,8 @@ static inline void lcd_send_buffer(uint16_t *buffer, size_t length);
 
 #if RG_SCREEN_DRIVER == 0 || RG_SCREEN_DRIVER == 1 /* ILI9341/ST7789 */
 #include "drivers/display/ili9341.h"
+#elif RG_SCREEN_DRIVER == 2 /* MIPI-DSI DPI (ESP32-P4) */
+#include "drivers/display/mipi_dsi.h"
 #elif RG_SCREEN_DRIVER == 99
 #include "drivers/display/sdl2.h"
 #else
@@ -352,6 +361,15 @@ static void display_task(void *arg)
         if (msg.type == RG_TASK_MSG_STOP)
             break;
 
+        // 只重合成覆盖层: 消息里没有画面数据, 不能走 write_update(那会解引用空指针)。
+        if (msg.type == RG_DISPLAY_MSG_OVERLAY)
+        {
+            if (overlay_draw)
+                overlay_draw();
+            rg_task_receive(&msg);
+            continue;
+        }
+
         if (display.changed)
         {
             update_viewport_scaling();
@@ -367,11 +385,29 @@ static void display_task(void *arg)
         }
 
         write_update(msg.dataPtr);
+        // 覆盖层必须在 write_update 之后: 它画的东西不应该被本次更新冲掉, 而下一次
+        // 更新冲掉它正是我们想要的(那等于自动擦除)。
+        if (overlay_draw)
+            overlay_draw();
         // draw_on_screen_display(0, display.screen.height);
         rg_task_receive(&msg);
 
         lcd_sync();
     }
+}
+
+void rg_display_set_overlay(rg_display_overlay_fn_t draw, rg_display_overlay_hit_fn_t hits)
+{
+    overlay_draw = draw;
+    overlay_hits = hits;
+}
+
+void rg_display_invalidate_overlay(void)
+{
+    // 队列还没建好(rg_display_init 之前)或者根本没注册覆盖层时, 请求没有意义
+    if (!overlay_draw || !display_task_queue)
+        return;
+    rg_task_send(display_task_queue, &(rg_task_msg_t){.type = RG_DISPLAY_MSG_OVERLAY});
 }
 
 void rg_display_force_redraw(void)
@@ -570,6 +606,17 @@ void rg_display_write_rect(int left, int top, int width, int height, int stride,
     }
 
     lcd_sync();
+
+    // 本函数是【同步】绘制路径(rg_gui 未绑定 surface 时走这条: 菜单、对话框), 不经过
+    // display_task, 所以覆盖层不会被合成, 画出来的东西会把按钮盖掉。这里入队一次合成
+    // 请求: 本函数开头的 rg_display_sync(true) 会排空上一条请求, 因此最后一条必然落在
+    // 所有图元之后, 按钮最终仍在最上层。只在真的盖住按钮时才请求(见 overlay_hits)。
+    //
+    // NOSYNC 表示调用方是一串批量写入中的一环(display_task 画 border 就是这样), 那种
+    // 场合紧跟着就有正常的合成, 不需要额外请求 —— 也避免显示任务给自己入队。
+    if (!(flags & RG_DISPLAY_WRITE_NOSYNC) && overlay_draw &&
+        (!overlay_hits || overlay_hits(left, top, width, height)))
+        rg_display_invalidate_overlay();
 }
 
 void rg_display_clear_rect(int left, int top, int width, int height, uint16_t color_le)

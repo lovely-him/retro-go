@@ -1,0 +1,45 @@
+# IDF Component Manager 清单。
+#
+# retro-go 上游一个 managed component 都没有, 这是本 fork 加的第一个 —— ESP32-P4 没有
+# 射频, Wi-Fi 必须经 SDIO 走板载的 ESP32-C6 协处理器。
+#
+# ── 为什么锁这四个版本 ──────────────────────────────────────────────────────────
+# ESP-Hosted 的 host 驱动与 C6 上的 slave 固件必须版本配对。当前板上烧的是
+# git_test/slave-claw, 其 main/esp_hosted_coprocessor_fw_ver.h 写着 2.12.3。
+# 所以这里精确锁定 git_repository/esp-claw 里那套已经在本板 + 本 slave 上跑通的组合:
+#
+#   espressif/esp_hosted             2.12.3
+#   espressif/esp_wifi_remote        1.6.5
+#   espressif/wifi_remote_over_eppp  0.3.3
+#   espressif/eppp_link              1.1.6
+#
+# 1.x 与 2.x 是两套不同架构(1.x 由 esp_hosted 自己提供 wifi API, 2.x 是
+# esp_wifi_remote 提供 API + EPPP 传输 + esp_hosted 只做 SDIO/RPC), 不能混用。
+# 厂商例程 esp32-p4-platform/examples/esp-idf/10_wifistation 带的是 1.4.7, 与板上
+# 的 2.12.3 slave 不匹配, 所以没有采用那一套。
+#
+# 其实只声明 esp_wifi_remote 就够(它会传递依赖拉出另外三个), 但那三个的约束是
+# ">=2.11" / ">=0.1", 会解析到更新的版本, 等于偏离已验证的基线。所以四个全部钉死。
+# 升级时请连同 C6 上的 slave 固件一起升。
+#
+# ── 为什么只有 launcher 需要 ────────────────────────────────────────────────────
+# 四个核心各自在 CMakeLists 第 3 行硬写 set(RG_ENABLE_NETWORKING 0), 覆盖了 rg_tool.py
+# 传进来的 -DRG_ENABLE_NETWORKING, 所以它们的构建既不会解析到这些组件, 体积也不受影响。
+# retro-go 里用到网络的功能(File server / Check for updates / NTP)全都在 launcher。
+#
+# ── 头文件注入 ──────────────────────────────────────────────────────────────────
+# P4 的 SOC_WIFI_SUPPORTED=0, 因此 IDF 的 esp_wifi.h 里 WIFI_INIT_CONFIG_DEFAULT()
+# 引用的 CONFIG_ESP_WIFI_* 这组 Kconfig 根本不会生成, rg_network.c:290 一编译就报
+# undeclared。esp_wifi_remote 的解决办法是自带一份 include/injected/esp_wifi.h, 并在
+# NOT CONFIG_ESP_WIFI_ENABLED 时把 injected/ 前插到 esp_wifi 组件 target 的
+# INTERFACE_INCLUDE_DIRECTORIES 里, 其中的宏改用 CONFIG_WIFI_RMT_* —— 那组符号由组件
+# 自己的 Kconfig 生成, 与 SoC 有没有射频无关。因为改的是 esp_wifi 组件本身, 而
+# components/retro-go 的 COMPONENT_REQUIRES 里已经有 esp_wifi, 所以注入自动生效,
+# retro-go 侧不需要任何 CMake 改动。
+
+dependencies:
+  idf: ">=5.3"
+  espressif/esp_wifi_remote: "1.6.5"
+  espressif/esp_hosted: "2.12.3"
+  espressif/wifi_remote_over_eppp: "0.3.3"
+  espressif/eppp_link: "1.1.6"

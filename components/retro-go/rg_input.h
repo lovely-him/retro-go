@@ -70,6 +70,29 @@ typedef struct
     int level;  // 0-1
 } rg_keymap_serial_t;
 
+// #define RG_GAMEPAD_TOUCH_MAP {{}, ...} to draw on-screen buttons over the game image
+// and drive them from a capacitive touch controller (drivers/input/touch_buttons.c).
+//
+// Rectangles are given in permille (0..1000) of rg_display's viewport instead of pixels,
+// so a single layout adapts to any screen orientation, scaling mode, or core aspect
+// ratio. x/w are fractions of the viewport width, y/h of its height.
+typedef struct
+{
+    rg_key_t key;
+    int x, y;   // top-left corner
+    int w, h;   // size
+} rg_keymap_touch_t;
+
+// #define RG_GAMEPAD_USB_MAP {{}, ...} to use the USB HID boot-keyboard driver
+// (drivers/input/usb_hid.c). HID constants such as HID_KEY_ENTER and
+// HID_MOD_RSHIFT are defined in drivers/input/usb_hid.h.
+typedef struct
+{
+    rg_key_t key;
+    uint8_t modifier; // required modifier bits, 0 = don't care
+    uint8_t usage;    // HID usage ID, 0 = modifier-only binding
+} rg_keymap_usb_t;
+
 // #define RG_GAMEPAD_VIRT_MAP {{}, ...} to add virtual buttons (eg start+select = menu)
 typedef struct
 {
