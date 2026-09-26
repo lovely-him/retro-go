@@ -8,6 +8,7 @@ Retro-Go's shared library (or framework) provides an easy way to port emulators 
 | Name                                                          | Notes |
 |---------------------------------------------------------------|--------|
 | [byteboi-rev1](targets/byteboi-rev1/docs/README.md)           |   |
+| [esp32-p4-wifi6-devkit](targets/esp32-p4-wifi6-devkit/docs/README.md) | WIP |
 | [esp32s3-devkit-c](targets/esp32s3-devkit-c/docs/README.md)   |   |
 | [esplay-micro](targets/esplay-micro/docs/README.md)           |   |
 | [esplay-s3](targets/esplay-s3/docs/README.md)                 | Broken |

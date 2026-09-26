@@ -3,6 +3,8 @@ __pycache__/
 .cache/
 .vscode/
 build/
+.venv/
+managed_components/
 
 # ESP32 build
 /partitions.bin

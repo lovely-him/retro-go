@@ -8,6 +8,21 @@ else() # esp-idf 4.1 - 4.4
     set(COMPONENT_REQUIRES "spi_flash fatfs app_update esp_adc_cal json nvs_flash esp_wifi esp_http_client")
 endif()
 
+# 驱动所需的额外组件:
+#   esp_lcd         esp_lcd_new_dsi_bus / new_panel_io_dbi / new_panel_dpi
+#   esp_mm          esp_cache_msync, 帧缓冲在 PSRAM 需回刷给 DSI 桥
+#   esp_driver_i2c  背光 I2C(本板背光无 GPIO, 由屏端 I2C 器件控制)
+#   esp_hw_support  esp_ldo_acquire_channel, DSI D-PHY 需 LDO_VO3 供电
+#   usb             USB Host Library, drivers/input/usb_hid.c 的 boot 键盘支持
+#   esp_driver_i2s  i2s_std, drivers/audio/es8311.c 的 I2S 放音通路
+# 用空格分隔 字符串拼接而非 list(APPEND)
+# 按 IDF 版本而非按 target 名判断
+if(IDF_VERSION_MAJOR GREATER_EQUAL 5) # esp-idf 5.*+
+    set(COMPONENT_REQUIRES "${COMPONENT_REQUIRES} esp_lcd esp_mm esp_driver_i2c esp_hw_support usb esp_driver_i2s")
+endif()
+set(COMPONENT_SRCDIRS "${COMPONENT_SRCDIRS} drivers/input drivers/usb")
+set(COMPONENT_ADD_INCLUDEDIRS "${COMPONENT_ADD_INCLUDEDIRS} drivers/input drivers/usb")
+
 register_component()
 
 # Small size is preferred because of the small cache and most things here aren't performance sensitive!
