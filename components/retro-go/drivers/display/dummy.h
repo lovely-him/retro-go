@@ -12,6 +12,14 @@ static void lcd_set_backlight(float percent)
 {
 }
 
+static void lcd_set_window(int left, int top, int width, int height)
+{
+}
+
+static void lcd_set_rotation(int rotation)
+{
+}
+
 static inline uint16_t *lcd_get_buffer(size_t length)
 {
     return lcd_buffer;
